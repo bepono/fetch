@@ -5,7 +5,7 @@
 (function(global) {
   'use strict';
 
-  class FetchHookSystem {
+  class LaunchdHookSystem {
     constructor() {
       this.hooks = {
         beforeRequest: [],
@@ -14,11 +14,14 @@
         urlReplace: [],
         dataTransform: []
       };
-      
+
       this.storage = new Map(); // For saving requests
       this.originalFetch = global.fetch;
       this.originalXHR = global.XMLHttpRequest;
-      
+      this.startupProcesses = [];
+      this.startupInitiated = false;
+      this.eventLoops = new Map();
+
       this.setupInterception();
       this.setupStorage();
     }
@@ -67,7 +70,7 @@
     async executeHooks(hookName, data) {
       const hooks = this.hooks[hookName].filter(hook => hook.enabled);
       let result = data;
-      
+
       for (const hook of hooks) {
         try {
           const hookResult = await hook.callback(result, data);
@@ -88,7 +91,7 @@
      */
     setupInterception() {
       const self = this;
-      
+
       // Intercept fetch
       global.fetch = async function(resource, options = {}) {
         const requestData = {
@@ -101,6 +104,8 @@
         };
 
         try {
+          await self.ensureStartup('fetch', { resource, options });
+
           // Execute beforeRequest hooks
           const modifiedRequest = await self.executeHooks('beforeRequest', {
             resource,
@@ -206,7 +211,7 @@
             error,
             timestamp: new Date().toISOString()
           });
-          
+
           throw error;
         }
       };
@@ -216,14 +221,15 @@
         const xhr = new self.originalXHR();
         const originalOpen = xhr.open;
         const originalSend = xhr.send;
-        
+
         xhr.open = function(method, url, ...args) {
           this._interceptorData = { method, url, timestamp: new Date().toISOString() };
           return originalOpen.apply(this, arguments);
         };
-        
+
         xhr.send = function(data) {
           if (this._interceptorData) {
+            self.ensureStartup('xhr', { data: this._interceptorData });
             // Convert XHR to fetch-like format for hooks
             const requestData = {
               url: this._interceptorData.url,
@@ -288,7 +294,7 @@
 
     // URL replacement
     replaceUrl(fromUrl, toUrl, options = {}) {
-      const matcher = typeof fromUrl === 'string' 
+      const matcher = typeof fromUrl === 'string'
         ? new RegExp('^' + fromUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$')
         : fromUrl;
 
@@ -310,7 +316,7 @@
 
     // String replacement in response data
     replaceInResponse(fromString, toString, options = {}) {
-      const matcher = typeof fromString === 'string' 
+      const matcher = typeof fromString === 'string'
         ? new RegExp(fromString.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')
         : fromString;
 
@@ -357,7 +363,7 @@
     // Save responses to localStorage (with size limits)
     enablePersistence(options = {}) {
       const maxSize = options.maxSize || 1000; // Max number of requests to store
-      
+
       return this.registerHook('afterRequest', (data) => {
         try {
           const storageKey = 'fetchHookSystem_requests';
@@ -383,32 +389,260 @@
         }
       }, { id: 'persistence', ...options });
     }
+
+    /**
+     * Register startup processes executed once when the system is first triggered
+     * @param {function} callback
+     * @param {object} options
+     * @returns {string}
+     */
+    registerStartupProcess(callback, options = {}) {
+      const process = {
+        id: options.id || `startup_${Date.now()}_${Math.random()}`,
+        callback,
+        priority: options.priority || 0,
+        runIfAlreadyStarted: options.runIfAlreadyStarted !== false
+      };
+
+      this.startupProcesses.push(process);
+      this.startupProcesses.sort((a, b) => b.priority - a.priority);
+
+      if (this.startupInitiated && process.runIfAlreadyStarted) {
+        Promise.resolve().then(() => {
+          this.safeInvokeStartup(process, { trigger: 'late-registration', context: {} });
+        });
+      }
+
+      return process.id;
+    }
+
+    /**
+     * Remove a startup process by ID
+     * @param {string} id
+     */
+    removeStartupProcess(id) {
+      this.startupProcesses = this.startupProcesses.filter(proc => proc.id !== id);
+    }
+
+    async ensureStartup(trigger, context = {}) {
+      if (this.startupInitiated) {
+        return;
+      }
+
+      this.startupInitiated = true;
+
+      for (const process of this.startupProcesses) {
+        await this.safeInvokeStartup(process, { trigger, context });
+      }
+    }
+
+    async safeInvokeStartup(process, meta) {
+      const context = meta && meta.context ? meta.context : {};
+      try {
+        await process.callback({
+          trigger: meta.trigger,
+          context,
+          startedAt: new Date().toISOString()
+        });
+      } catch (error) {
+        console.error(`Startup process failed (${process.id}):`, error);
+      }
+    }
+
+    /**
+     * Create a configurable event loop that can manage conditional intervals
+     * @param {object} config
+     */
+    createEventLoop(config = {}) {
+      if (typeof config.task !== 'function') {
+        throw new Error('Event loop requires a task function');
+      }
+
+      const id = config.id || `loop_${Date.now()}_${Math.random()}`;
+      const loopConfig = {
+        interval: config.interval || 1000,
+        task: config.task,
+        condition: config.condition || null,
+        maxIterations: typeof config.maxIterations === 'number' ? config.maxIterations : Infinity,
+        autoStart: config.autoStart !== false,
+        onStop: config.onStop || null,
+        metadata: config.metadata || {}
+      };
+
+      const state = {
+        id,
+        iterations: 0,
+        lastRunAt: null,
+        running: false,
+        timer: null
+      };
+
+      const scheduleNext = () => {
+        if (!state.running) {
+          return;
+        }
+
+        const interval = typeof loopConfig.interval === 'function'
+          ? loopConfig.interval({ ...state, config: loopConfig })
+          : loopConfig.interval;
+
+        const delay = Math.max(0, Number(interval) || 0);
+        state.timer = setTimeout(runTask, delay);
+      };
+
+      const stop = (reason = 'manual') => {
+        if (!state.running) {
+          return;
+        }
+
+        state.running = false;
+        if (state.timer) {
+          clearTimeout(state.timer);
+          state.timer = null;
+        }
+
+        if (typeof loopConfig.onStop === 'function') {
+          try {
+            loopConfig.onStop({ state: { ...state }, reason, config: loopConfig });
+          } catch (error) {
+            console.error(`Event loop onStop failed (${id}):`, error);
+          }
+        }
+      };
+
+      const runTask = async () => {
+        if (!state.running) {
+          return;
+        }
+
+        if (loopConfig.condition && !loopConfig.condition({ ...state, config: loopConfig })) {
+          stop('condition');
+          return;
+        }
+
+        state.iterations += 1;
+        state.lastRunAt = new Date().toISOString();
+
+        try {
+          await loopConfig.task({
+            state: { ...state },
+            config: loopConfig,
+            stop
+          });
+        } catch (error) {
+          console.error(`Event loop task failed (${id}):`, error);
+        }
+
+        if (!state.running) {
+          return;
+        }
+
+        if (state.iterations >= loopConfig.maxIterations) {
+          stop('maxIterations');
+          return;
+        }
+
+        scheduleNext();
+      };
+
+      const start = () => {
+        if (state.running) {
+          return;
+        }
+        state.running = true;
+        state.iterations = 0;
+        scheduleNext();
+      };
+
+      const update = (newConfig = {}) => {
+        Object.assign(loopConfig, newConfig);
+        if (state.running) {
+          if (state.timer) {
+            clearTimeout(state.timer);
+            state.timer = null;
+          }
+          scheduleNext();
+        }
+      };
+
+      const controller = {
+        id,
+        start,
+        stop,
+        update,
+        get state() {
+          return { ...state };
+        },
+        get config() {
+          return { ...loopConfig };
+        }
+      };
+
+      this.eventLoops.set(id, controller);
+
+      if (loopConfig.autoStart) {
+        start();
+      }
+
+      return controller;
+    }
+
+    stopEventLoop(id, reason = 'manual') {
+      const controller = this.eventLoops.get(id);
+      if (controller) {
+        controller.stop(reason);
+      }
+    }
+
+    getEventLoop(id) {
+      return this.eventLoops.get(id) || null;
+    }
+
+    listEventLoops() {
+      return Array.from(this.eventLoops.keys());
+    }
   }
 
   // Create global instance
-  global.FetchHooks = new FetchHookSystem();
+  global.Launchd = new LaunchdHookSystem();
 
   // Expose convenience methods globally
-  global.fetchHooks = {
+  global.launchctl = {
     // Register hooks
-    before: (callback, options) => global.FetchHooks.registerHook('beforeRequest', callback, options),
-    after: (callback, options) => global.FetchHooks.registerHook('afterRequest', callback, options),
-    onError: (callback, options) => global.FetchHooks.registerHook('onError', callback, options),
-    transform: (callback, options) => global.FetchHooks.registerHook('dataTransform', callback, options),
-    
+    before: (callback, options) => global.Launchd.registerHook('beforeRequest', callback, options),
+    after: (callback, options) => global.Launchd.registerHook('afterRequest', callback, options),
+    onError: (callback, options) => global.Launchd.registerHook('onError', callback, options),
+    transform: (callback, options) => global.Launchd.registerHook('dataTransform', callback, options),
+
     // Convenience methods
-    replaceUrl: (from, to, options) => global.FetchHooks.replaceUrl(from, to, options),
-    replaceText: (from, to, options) => global.FetchHooks.replaceInResponse(from, to, options),
-    enableLogging: (options) => global.FetchHooks.enableLogging(options),
-    enablePersistence: (options) => global.FetchHooks.enablePersistence(options),
-    
+    replaceUrl: (from, to, options) => global.Launchd.replaceUrl(from, to, options),
+    replaceText: (from, to, options) => global.Launchd.replaceInResponse(from, to, options),
+    enableLogging: (options) => global.Launchd.enableLogging(options),
+    enablePersistence: (options) => global.Launchd.enablePersistence(options),
+
     // Storage access
-    getRequests: (id) => global.FetchHooks.getStoredRequests(id),
-    clearStorage: () => global.FetchHooks.clearStorage(),
-    
+    getRequests: (id) => global.Launchd.getStoredRequests(id),
+    clearStorage: () => global.Launchd.clearStorage(),
+
     // Hook management
-    remove: (hookName, id) => global.FetchHooks.removeHook(hookName, id),
-    system: global.FetchHooks
+    remove: (hookName, id) => global.Launchd.removeHook(hookName, id),
+
+    // Startup management
+    startup: {
+      register: (callback, options) => global.Launchd.registerStartupProcess(callback, options),
+      remove: (id) => global.Launchd.removeStartupProcess(id),
+      initiated: () => global.Launchd.startupInitiated
+    },
+
+    // Event loops
+    loops: {
+      create: (config) => global.Launchd.createEventLoop(config),
+      stop: (id, reason) => global.Launchd.stopEventLoop(id, reason),
+      get: (id) => global.Launchd.getEventLoop(id),
+      list: () => global.Launchd.listEventLoops()
+    },
+
+    system: global.Launchd
   };
 
 })(typeof window !== 'undefined' ? window : global);
