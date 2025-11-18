@@ -1,0 +1,170 @@
+:root {
+  color-scheme: light dark;
+  --background: #f7f8fb;
+  --surface: #ffffff;
+  --accent: #006c67;
+  --accent-strong: #004643;
+  --text-primary: #1b1f24;
+  --text-secondary: #5f6c7b;
+  --border: #d0d5dd;
+  font-family: "Inter", "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--background);
+  color: var(--text-primary);
+  display: flex;
+  flex-direction: column;
+}
+
+.app-header {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 1.5rem clamp(1.5rem, 4vw, 3rem);
+  display: grid;
+  gap: 1rem;
+  align-items: center;
+  grid-template-columns: auto 1fr auto;
+}
+
+.brand h1 {
+  margin: 0;
+  font-size: clamp(1.5rem, 4vw, 2.25rem);
+  color: var(--accent-strong);
+}
+
+.tagline {
+  margin: 0.25rem 0 0;
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+}
+
+.main-nav {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.nav-button {
+  border: 1px solid var(--border);
+  background: transparent;
+  padding: 0.5rem 1rem;
+  border-radius: 999px;
+  font-weight: 600;
+  color: var(--text-primary);
+  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+  cursor: pointer;
+}
+
+.nav-button.active,
+.nav-button:focus-visible,
+.nav-button:hover {
+  background: var(--accent);
+  color: white;
+  border-color: transparent;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
+.toolbar-button {
+  border: none;
+  background: var(--accent-strong);
+  color: white;
+  padding: 0.5rem 1rem;
+  border-radius: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0, 70, 67, 0.15);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.toolbar-button:hover,
+.toolbar-button:focus-visible {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(0, 70, 67, 0.2);
+}
+
+.content {
+  flex: 1;
+  padding: clamp(1.5rem, 4vw, 3rem);
+  max-width: 960px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.view {
+  display: none;
+  background: var(--surface);
+  border-radius: 1.25rem;
+  padding: clamp(1.5rem, 4vw, 2.5rem);
+  box-shadow: 0 12px 36px rgba(15, 23, 42, 0.08);
+  border: 1px solid rgba(15, 23, 42, 0.05);
+}
+
+.view.active {
+  display: block;
+}
+
+.view h2 {
+  margin-top: 0;
+  font-size: clamp(1.4rem, 3vw, 2rem);
+}
+
+.app-footer {
+  text-align: center;
+  padding: 1.5rem;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.modal::backdrop {
+  background: rgba(7, 17, 26, 0.55);
+}
+
+.modal {
+  border: none;
+  border-radius: 1rem;
+  padding: 0;
+  width: min(420px, calc(100% - 3rem));
+}
+
+.modal-content {
+  padding: 2rem;
+  display: grid;
+  gap: 1rem;
+  background: var(--surface);
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+}
+
+.secondary {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-primary);
+  padding: 0.45rem 1.1rem;
+  border-radius: 0.75rem;
+  cursor: pointer;
+}
+
+@media (max-width: 960px) {
+  .app-header {
+    grid-template-columns: 1fr;
+    justify-items: stretch;
+  }
+
+  .toolbar {
+    justify-content: flex-start;
+  }
+}
