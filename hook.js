@@ -601,6 +601,99 @@
     listEventLoops() {
       return Array.from(this.eventLoops.keys());
     }
+
+    /**
+     * Prepare a payload for the OpenAI API that collapses Markdown documents
+     * and includes helper metadata for a grounding-aware summary request.
+     *
+     * @param {Array|Object|string} markdownSources - Collection of markdown
+     *   inputs. Items can be strings or objects containing `name` and
+     *   `content` properties.
+     * @param {Object} options - Additional configuration for the payload.
+     * @param {string} [options.model='gpt-4.1-mini'] - Target OpenAI model.
+     * @param {string} [options.aspect='key insights'] - Focus area for the
+     *   requested third-party style summary.
+     * @param {string} [options.perspective='third-party analyst'] - Perspective
+     *   descriptor for the summarisation request.
+     * @returns {Object} Structured payload containing collapsed content,
+     *   metadata, and recommended SQL schemas that support the workflow.
+     */
+    prepareMarkdownGroundingPayload(markdownSources, options = {}) {
+      const config = {
+        model: options.model || 'gpt-4.1-mini',
+        aspect: options.aspect || 'key insights',
+        perspective: options.perspective || 'third-party analyst'
+      };
+
+      const sourceArray = Array.isArray(markdownSources)
+        ? markdownSources
+        : [markdownSources].filter(Boolean);
+
+      if (!sourceArray.length) {
+        throw new Error('No markdown sources supplied for grounding payload preparation.');
+      }
+
+      const normalizedDocuments = sourceArray.map((entry, index) => {
+        if (typeof entry === 'string') {
+          return {
+            name: `document_${index + 1}.md`,
+            content: entry
+          };
+        }
+
+        if (entry && typeof entry === 'object') {
+          const name = entry.name || `document_${index + 1}.md`;
+          const content = entry.content || '';
+
+          if (typeof content !== 'string') {
+            throw new TypeError(`Markdown content for ${name} must be a string.`);
+          }
+
+          return { name, content };
+        }
+
+        throw new TypeError('Each markdown source must be a string or an object with name/content.');
+      });
+
+      const combinedDocument = normalizedDocuments
+        .map(doc => `# ${doc.name}\n\n${doc.content.trim()}`.trim())
+        .join('\n\n---\n\n');
+
+      const fileList = normalizedDocuments.map(doc => ({
+        name: doc.name,
+        size: doc.content.length,
+        preview: doc.content.split('\n').slice(0, 5).join('\n')
+      }));
+
+      const sqlSchema = {
+        agents: `CREATE TABLE agents (\n  id SERIAL PRIMARY KEY,\n  name TEXT NOT NULL,\n  configuration JSONB DEFAULT '{}'::jsonb,\n  model TEXT NOT NULL,\n  provider TEXT NOT NULL,\n  photo_color TEXT,\n  bio TEXT,\n  meta JSONB DEFAULT '{}'::jsonb,\n  created_at TIMESTAMPTZ DEFAULT NOW(),\n  updated_at TIMESTAMPTZ DEFAULT NOW()\n);`,
+        customers: `CREATE TABLE customers (\n  id SERIAL PRIMARY KEY,\n  name TEXT NOT NULL,\n  configuration JSONB DEFAULT '{}'::jsonb,\n  role TEXT,\n  supervisor_id INTEGER REFERENCES employees(id),\n  photo_color TEXT,\n  bio TEXT,\n  meta JSONB DEFAULT '{}'::jsonb,\n  created_at TIMESTAMPTZ DEFAULT NOW(),\n  updated_at TIMESTAMPTZ DEFAULT NOW()\n);`,
+        employees: `CREATE TABLE employees (\n  id SERIAL PRIMARY KEY,\n  name TEXT NOT NULL,\n  configuration JSONB DEFAULT '{}'::jsonb,\n  role TEXT,\n  supervisor_id INTEGER REFERENCES employees(id),\n  photo_color TEXT,\n  bio TEXT,\n  meta JSONB DEFAULT '{}'::jsonb,\n  created_at TIMESTAMPTZ DEFAULT NOW(),\n  updated_at TIMESTAMPTZ DEFAULT NOW()\n);`,
+        tasks: `CREATE TABLE tasks (\n  id SERIAL PRIMARY KEY,\n  title TEXT NOT NULL,\n  description TEXT,\n  status TEXT DEFAULT 'pending',\n  priority TEXT DEFAULT 'medium',\n  assignee_agent_id INTEGER REFERENCES agents(id),\n  assignee_employee_id INTEGER REFERENCES employees(id),\n  assignee_customer_id INTEGER REFERENCES customers(id),\n  metadata JSONB DEFAULT '{}'::jsonb,\n  due_date TIMESTAMPTZ,\n  created_at TIMESTAMPTZ DEFAULT NOW(),\n  updated_at TIMESTAMPTZ DEFAULT NOW()\n);`
+      };
+
+      return {
+        model: config.model,
+        objective: `Produce a ${config.perspective} summary focusing on ${config.aspect}.`,
+        files: fileList,
+        combinedDocument,
+        prompt: [
+          {
+            role: 'system',
+            content: 'You are a grounding-focused analyst that condenses Markdown corpora into third-party perspective summaries.'
+          },
+          {
+            role: 'user',
+            content: `Summarise the provided Markdown bundle from the perspective of a ${config.perspective}. Focus on ${config.aspect}.`
+          }
+        ],
+        sqlSchema,
+        metadata: {
+          documentCount: normalizedDocuments.length,
+          totalCharacters: normalizedDocuments.reduce((sum, doc) => sum + doc.content.length, 0)
+        }
+      };
+    }
   }
 
   // Create global instance
@@ -641,6 +734,9 @@
       get: (id) => global.Launchd.getEventLoop(id),
       list: () => global.Launchd.listEventLoops()
     },
+
+    prepareMarkdownGroundingPayload: (markdownSources, options) =>
+      global.Launchd.prepareMarkdownGroundingPayload(markdownSources, options),
 
     system: global.Launchd
   };
