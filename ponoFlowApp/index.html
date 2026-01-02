@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ponoFlowApp</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="brand">
+        <h1>ponoFlowApp</h1>
+        <p class="tagline">A single source of truth for every flow.</p>
+      </div>
+      <nav class="main-nav" aria-label="Primary">
+        <button class="nav-button" data-section="dashboard">Dashboard</button>
+        <button class="nav-button" data-section="initiatives">Initiatives</button>
+        <button class="nav-button" data-section="teams">Teams</button>
+        <button class="nav-button" data-section="resources">Resources</button>
+        <button class="nav-button" data-section="timeline">Timeline</button>
+      </nav>
+      <div class="toolbar">
+        <button class="toolbar-button" data-modal="createProject">New Project</button>
+        <button class="toolbar-button" data-modal="quickNote">Quick Note</button>
+        <button class="toolbar-button" data-modal="inviteMember">Invite Member</button>
+      </div>
+    </header>
+
+    <main id="content" class="content" tabindex="-1">
+      <section data-section="dashboard" class="view active">
+        <h2>Dashboard</h2>
+        <p>
+          Start curating the ponoFlowApp experience. Drop widgets, trackers, or
+          notes here as they come to life.
+        </p>
+      </section>
+      <section data-section="initiatives" class="view">
+        <h2>Initiatives</h2>
+        <p>Placeholder for mapping programs, deliverables, and milestones.</p>
+      </section>
+      <section data-section="teams" class="view">
+        <h2>Teams</h2>
+        <p>
+          Outline your collaborators, assign roles, and track responsibilities in
+          one place.
+        </p>
+      </section>
+      <section data-section="resources" class="view">
+        <h2>Resources</h2>
+        <p>Link documentation, assets, or integrations when they are ready.</p>
+      </section>
+      <section data-section="timeline" class="view">
+        <h2>Timeline</h2>
+        <p>Plan releases, sprints, and key events as the project evolves.</p>
+      </section>
+    </main>
+
+    <footer class="app-footer">
+      <p>ponoFlowApp &mdash; organize every flow with intention.</p>
+    </footer>
+
+    <dialog id="modal-createProject" class="modal" aria-labelledby="modal-createProject-title">
+      <form method="dialog" class="modal-content">
+        <h3 id="modal-createProject-title">New project shell</h3>
+        <p>
+          Capture future project details here when you are ready to define the
+          scope.
+        </p>
+        <menu class="modal-actions">
+          <button value="cancel" class="secondary">Close</button>
+        </menu>
+      </form>
+    </dialog>
+
+    <dialog id="modal-quickNote" class="modal" aria-labelledby="modal-quickNote-title">
+      <form method="dialog" class="modal-content">
+        <h3 id="modal-quickNote-title">Quick note</h3>
+        <p>Jot down reminders or share links with the team.</p>
+        <menu class="modal-actions">
+          <button value="cancel" class="secondary">Close</button>
+        </menu>
+      </form>
+    </dialog>
+
+    <dialog id="modal-inviteMember" class="modal" aria-labelledby="modal-inviteMember-title">
+      <form method="dialog" class="modal-content">
+        <h3 id="modal-inviteMember-title">Invite a collaborator</h3>
+        <p>
+          Use this dialog later to send invites and set access levels for new
+          teammates.
+        </p>
+        <menu class="modal-actions">
+          <button value="cancel" class="secondary">Close</button>
+        </menu>
+      </form>
+    </dialog>
+
+    <script src="app.js" type="module"></script>
+  </body>
+</html>
